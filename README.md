@@ -66,7 +66,7 @@ CAEHJM2NVDC7IPHICCPAVSNFF3MN4SK4F5K5O6V5T3MSDQBULBLNLUCB
 
 ## 🎬 Live Demo & Video
 
-*   **Live Application**: [YOUR_VERCEL_LINK_HERE](https://vercel.com)
+*   **Live Application**: [STELLARLEND Live on Netlify](https://stellarlendmastery-demo.netlify.app)
 *   **Demo Video**: [YOUR_YOUTUBE_LINK_HERE](https://youtube.com)
 
 ---
