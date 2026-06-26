@@ -37,11 +37,12 @@ impl StellarLend {
         user.require_auth();
         let mut data = Self::get_account_data_internal(&env, &user);
         data.supplied += amount;
-        env.storage().instance().set(&DataKey::Account(user), &data);
+        env.storage().instance().set(&DataKey::Account(user.clone()), &data);
         
         let mut total: i128 = env.storage().instance().get(&DataKey::TotalSupplied).unwrap_or(0);
         total += amount;
         env.storage().instance().set(&DataKey::TotalSupplied, &total);
+        env.events().publish((symbol_short!("deposit"), user), amount);
     }
 
     /// Withdraw funds from the lending pool
@@ -52,11 +53,12 @@ impl StellarLend {
             panic!("insufficient supplied balance");
         }
         data.supplied -= amount;
-        env.storage().instance().set(&DataKey::Account(user), &data);
+        env.storage().instance().set(&DataKey::Account(user.clone()), &data);
         
         let mut total: i128 = env.storage().instance().get(&DataKey::TotalSupplied).unwrap_or(0);
         total -= amount;
         env.storage().instance().set(&DataKey::TotalSupplied, &total);
+        env.events().publish((symbol_short!("withdraw"), user), amount);
     }
 
     /// Borrow funds against collateral (simplified: collateral is 100% of supply for demo)
@@ -71,11 +73,12 @@ impl StellarLend {
         }
         
         data.borrowed += amount;
-        env.storage().instance().set(&DataKey::Account(user), &data);
+        env.storage().instance().set(&DataKey::Account(user.clone()), &data);
         
         let mut total: i128 = env.storage().instance().get(&DataKey::TotalBorrowed).unwrap_or(0);
         total += amount;
         env.storage().instance().set(&DataKey::TotalBorrowed, &total);
+        env.events().publish((symbol_short!("borrow"), user), amount);
     }
 
     /// Repay borrowed funds
@@ -86,11 +89,12 @@ impl StellarLend {
             panic!("repaying more than borrowed");
         }
         data.borrowed -= amount;
-        env.storage().instance().set(&DataKey::Account(user), &data);
+        env.storage().instance().set(&DataKey::Account(user.clone()), &data);
         
         let mut total: i128 = env.storage().instance().get(&DataKey::TotalBorrowed).unwrap_or(0);
         total -= amount;
         env.storage().instance().set(&DataKey::TotalBorrowed, &total);
+        env.events().publish((symbol_short!("repay"), user), amount);
     }
 
     /// Get details for a specific user account

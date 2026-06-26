@@ -1,4 +1,5 @@
 # 🚀 Stellar Soroban P2P Lending Smart Contract
+[![CI/CD Pipeline](https://github.com/ashishh-tech/STELLARLENDMASTERY/actions/workflows/ci.yml/badge.svg)](https://github.com/ashishh-tech/STELLARLENDMASTERY/actions/workflows/ci.yml)
 
 ## 📌 Project Description
 
@@ -63,6 +64,13 @@ CAEHJM2NVDC7IPHICCPAVSNFF3MN4SK4F5K5O6V5T3MSDQBULBLNLUCB
 
 ---
 
+## 🎬 Live Demo & Video
+
+*   **Live Application**: [YOUR_VERCEL_LINK_HERE](https://vercel.com)
+*   **Demo Video**: [YOUR_YOUTUBE_LINK_HERE](https://youtube.com)
+
+---
+
 ## 📸 Project Showcase
 
 ### **1. Premium Lending Dashboard**
@@ -75,6 +83,10 @@ Proof of deployment on the Stellar Testnet as seen on Stellar Expert.
 
 ![Stellar Expert Verification]<img width="1905" height="882" alt="image" src="https://github.com/user-attachments/assets/1daf1dcf-c7af-4eec-9b81-2b25dd7a0b92" />
 
+### **3. Smart Contract Test Verification**
+Proof of passing local unit tests for the Soroban smart contract operations.
+
+![Test Verification](screenshots/test_output.png)
 
 ---
 
