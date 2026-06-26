@@ -140,17 +140,4 @@ MIT License
 * Interest rate mechanism
 * Collateral support
 * Default penalties
-* UI Dashboard (React + Web3 integration)
 * Multi-asset lending support
-
----
-
-## 👨‍💻 Author
-
-Ashish Chaurasia
-
----
-
-## 📜 License
-
-MIT License
