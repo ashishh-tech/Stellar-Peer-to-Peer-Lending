@@ -73,7 +73,8 @@ The frontend features a high-end glassmorphism design with animated background o
 ### **2. On-Chain Contract Verification**
 Proof of deployment on the Stellar Testnet as seen on Stellar Expert.
 
-![Stellar Expert Verification](screenshots/stellar_expert.png)
+![Stellar Expert Verification]<img width="1905" height="882" alt="image" src="https://github.com/user-attachments/assets/1daf1dcf-c7af-4eec-9b81-2b25dd7a0b92" />
+
 
 ---
 
