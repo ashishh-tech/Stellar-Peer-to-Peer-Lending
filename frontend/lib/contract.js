@@ -128,13 +128,44 @@ async function submitContractTx(userAddress, fnName, args, onStatus) {
   // 3. Assemble with resource estimates from simulation
   const assembled = StellarSdk.SorobanRpc.assembleTransaction(tx, simResponse).build();
 
-  // 4. Sign via Freighter
-  const signResult = await signTransaction(assembled.toXDR(), {
-    network: "TESTNET",
-    networkPassphrase: NETWORK_PASSPHRASE,
-    address: userAddress,
-    accountToSign: userAddress,
-  });
+  // 4. Sign via Freighter (with timeout guard)
+  // Freighter's popup can crash on complex Soroban transactions, causing the
+  // promise to never resolve. We race against a 45-second timeout.
+  const xdrToSign = assembled.toXDR();
+  console.log("[StellarLend] Sending XDR to Freighter for signing...");
+  console.log("[StellarLend] XDR length:", xdrToSign.length);
+
+  let signResult;
+  try {
+    signResult = await Promise.race([
+      signTransaction(xdrToSign, {
+        networkPassphrase: NETWORK_PASSPHRASE,
+        address: userAddress,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Freighter signing timed out (45s). This usually means the Freighter popup crashed.\n\n" +
+                "How to fix:\n" +
+                "1. Update your Freighter extension to the latest version\n" +
+                "2. Make sure Freighter is set to 'Test Network'\n" +
+                "3. Try closing and re-opening the Freighter extension\n" +
+                "4. Refresh this page and try again"
+              )
+            ),
+          45000
+        )
+      ),
+    ]);
+  } catch (freighterErr) {
+    throw new Error(
+      freighterErr.message ||
+        "Freighter signing failed. Please update your Freighter wallet extension."
+    );
+  }
+
   if (signResult?.error) {
     throw new Error("Signing rejected: " + signResult.error);
   }
