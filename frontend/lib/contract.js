@@ -130,7 +130,10 @@ async function submitContractTx(userAddress, fnName, args, onStatus) {
 
   // 4. Sign via Freighter
   const signResult = await signTransaction(assembled.toXDR(), {
+    network: "TESTNET",
     networkPassphrase: NETWORK_PASSPHRASE,
+    address: userAddress,
+    accountToSign: userAddress,
   });
   if (signResult?.error) {
     throw new Error("Signing rejected: " + signResult.error);
