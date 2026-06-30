@@ -90,8 +90,10 @@ Proof of passing local unit tests for the Soroban smart contract operations.
 
 ### **4. Mobile Responsive UI**
 The dashboard is fully responsive, ensuring a seamless lending and borrowing experience on mobile devices.
-<!-- 📸 UPLOAD YOUR MOBILE SCREENSHOT HERE (Drag and drop the image file in the GitHub editor) -->
-> Please replace this block with your mobile screenshot.
+
+<p align="center">
+  <img width="371" alt="StellarLend Mobile Dashboard" src="https://github.com/user-attachments/assets/b0cfbc73-f087-4ef8-810c-afc9d4765140" />
+</p>
 
 ### **5. Additional Screenshots**
 <!-- 📸 UPLOAD YOUR NEW SCREENSHOT HERE (Drag and drop the image file in the GitHub editor) -->
