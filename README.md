@@ -76,12 +76,13 @@ CDSYUIDUTWYYPT37MH274AGVGVUR6H3IVUQGWUWYX6A6B3U55I37TJKJ
 ### **1. Premium Lending Dashboard**
 The frontend features a high-end glassmorphism design with animated background orbs, real-time Stellar balance fetching, and a dynamic portfolio health tracker.
 
-![StellarLend Dashboard](screenshots/dashboard.png)
+<img width="1918" height="893" alt="image" src="https://github.com/user-attachments/assets/334eebb9-77c0-4f08-ac03-2559ba6ad2be" />
+
 
 ### **2. On-Chain Contract Verification**
 Proof of deployment on the Stellar Testnet as seen on Stellar Expert.
+<img width="1907" height="921" alt="image" src="https://github.com/user-attachments/assets/6a01f7c9-4787-46c7-a07a-f4a879821236" />
 
-![Stellar Expert Verification]<img width="1905" height="882" alt="image" src="https://github.com/user-attachments/assets/1daf1dcf-c7af-4eec-9b81-2b25dd7a0b92" />
 
 ### **3. Smart Contract Test Verification**
 Proof of passing local unit tests for the Soroban smart contract operations.
@@ -95,9 +96,7 @@ The dashboard is fully responsive, ensuring a seamless lending and borrowing exp
   <img width="371" alt="StellarLend Mobile Dashboard" src="https://github.com/user-attachments/assets/b0cfbc73-f087-4ef8-810c-afc9d4765140" />
 </p>
 
-### **5. Additional Screenshots**
-<!-- 📸 UPLOAD YOUR NEW SCREENSHOT HERE (Drag and drop the image file in the GitHub editor) -->
-> Please replace this block with your uploaded screenshot.
+
 
 ---
 
