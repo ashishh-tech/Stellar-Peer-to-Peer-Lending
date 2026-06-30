@@ -96,7 +96,10 @@ The dashboard is fully responsive, ensuring a seamless lending and borrowing exp
   <img width="371" alt="StellarLend Mobile Dashboard" src="https://github.com/user-attachments/assets/b0cfbc73-f087-4ef8-810c-afc9d4765140" />
 </p>
 
+### **5. CI/CD Pipeline Running**
+Automated GitHub Actions workflow successfully building and deploying the project.
 
+![CI/CD Pipeline](screenshots/cicd_pipeline.png)
 
 ---
 
