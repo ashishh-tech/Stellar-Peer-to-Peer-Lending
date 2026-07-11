@@ -194,6 +194,9 @@ transaction confirmation visibility and modal navigation.
 
 ## 📈 Repository Analytics (Last 14 Days)
 
+![GitHub Traffic Analytics](<img width="1050" height="901" alt="Screenshot 2026-07-11 092826" src="https://github.com/user-attachments/assets/8b7f4907-105c-4993-99c2-9b017b16f551" />
+)
+
 | Metric | Count |
 |--------|-------|
 | Total Clones | 201 |
