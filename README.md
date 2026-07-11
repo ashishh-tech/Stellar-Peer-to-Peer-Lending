@@ -159,6 +159,49 @@ The frontend communicates with the deployed Soroban smart contract through a ded
 2. Deploy using Stellar CLI.
 
 ---
+## 📊 User Feedback Summary (Beta Testing — June 2026)
+
+### Wallet Connection Experience
+- Majority of users found it **Very Easy** to connect Freighter wallet
+- Some found it **Easy**
+- 0% reported difficulty
+
+### Transaction Completion
+- Most users **successfully completed** a Supply/Borrow transaction
+- Very few completed with minor issues
+
+### UI/UX Rating (1–5 scale)
+- **Average Rating: 4.8 / 5**
+- Most users rated it 5/5
+
+### Mainnet Interest
+- Majority said **"Definitely Yes"** to using StellarLend on Mainnet
+
+### Key User Feedback
+- ✅ "Clean UI, smooth borrow/supply experience"
+- ✅ "No issues"
+- ⚠️ "Transaction hash not visible after completion"
+- ⚠️ "Close (X) button on Borrow modal needs improvement"
+
+### Summary
+Overall reception is highly positive with an average UI/UX 
+score of 4.8/5. Minor UX improvements identified around 
+transaction confirmation visibility and modal navigation.
+
+📊 [View Full Response Sheet](https://docs.google.com/spreadsheets/d/12jBf8IAJxlGuiJeIxMbgcZi-5Wm4a8OYETyIynZHVJY/edit?usp=sharing)
+
+---
+
+## 📈 Repository Analytics (Last 14 Days)
+
+| Metric | Count |
+|--------|-------|
+| Total Clones | 201 |
+| Unique Cloners | 74 |
+| Total Views | 62 |
+| Unique Visitors | 12 |
+
+*Source: GitHub Traffic Insights — June 26 to July 9, 2026*
 
 ## 👨‍💻 Author
 
