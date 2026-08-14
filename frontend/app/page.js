@@ -12,6 +12,7 @@ const Landing = dynamic(() => import('@/components/Landing'), { ssr: false });
 export default function Home() {
   const [address, setAddress] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('marketplace');
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -35,18 +36,27 @@ export default function Home() {
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-navy-950 text-brand-emerald animate-pulse">Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-emerald-400 font-mono">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          <span>Connecting to Stellar P2P Protocol...</span>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen relative">
+    <div className="min-h-screen bg-slate-950 text-white relative">
       <Navbar 
         address={address} 
         onConnect={(addr) => setAddress(addr)} 
         onDisconnect={() => setAddress(null)} 
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
       />
       {address ? (
-        <Dashboard />
+        <Dashboard activeTab={activeTab} setActiveTab={setActiveTab} />
       ) : (
         <Landing onConnect={(addr) => setAddress(addr)} />
       )}

@@ -1,86 +1,42 @@
-# About Peer-to-Peer Lending Stellar
+# About StellarP2P Lending Protocol
 
 ## 🎯 Mission
 
-To build a transparent, trustless, and decentralized lending platform on the Stellar blockchain that eliminates intermediaries and provides fair access to credit for everyone.
+To pioneer an open, transparent, and direct Peer-to-Peer (P2P) lending protocol on the Stellar blockchain, eliminating intermediaries and allowing lenders and borrowers to agree on custom interest rates and loan terms.
 
 ## 📖 Overview
 
-**Peer-to-Peer Lending Stellar** is a smart contract-based lending platform that enables:
+**StellarP2P** is an on-chain escrow lending protocol built on Soroban that enables:
 
-- **Lenders** to offer loans and earn interest on their capital
-- **Borrowers** to access funds directly without bank approval
-- **Both parties** to interact trustlessly through blockchain automation
+- **Lenders** to define custom loan offers with individualized interest rates (APR) and durations.
+- **Borrowers** to browse an open marketplace of offers and instantly fund their positions upon acceptance.
+- **Automated Settlement** where the smart contract locks funds in escrow and handles repayments and default conditions.
 
-## 🔐 Why Stellar?
+## 🔐 Why Stellar & Soroban?
 
-- ✅ Fast & cheap transactions (compared to Ethereum)
-- ✅ Built-in asset support with Stellar Network
-- ✅ High throughput - processes thousands of transactions per second
-- ✅ Developer-friendly with Soroban smart contracts
-- ✅ Growing ecosystem with Freighter wallet integration
+- ✅ **Sub-Second Finality**: Transactions settle in ~5 seconds with Stellar consensus.
+- ✅ **Micro-Fees**: Transaction costs of a fraction of a cent make micro-loans viable.
+- ✅ **State Isolation**: Independent `LoanOffer` contracts and storage keys ensure clean escrow state management.
+- ✅ **Freighter Integration**: Native browser extension wallet signing.
 
-## 🏗️ Architecture
+## 🏗️ Protocol Architecture
 
-### Smart Contract (Soroban)
-- Written in Rust
-- Deployed on Stellar Testnet
-- Manages loan creation, acceptance, and repayment
-- Transparent on-chain state for all transactions
+### 1. Smart Contract (Soroban Rust)
+- **State Machine**: Tracks each loan through 4 states: `Active` $\rightarrow$ `Funded` $\rightarrow$ `Repaid` (or `Defaulted`).
+- **Storage**: Persistent storage keyed by unique `loan_id` and indexed per user address.
 
-### Frontend Integration
-- Freighter Wallet for secure authentication
-- Web3 integration for contract interaction
-- User-friendly dashboard (coming soon)
-
-## 💡 Core Features
-
-1. **Loan Marketplace** - Browse and create loan offers
-2. **Instant Acceptance** - Borrowers accept loans in seconds
-3. **Automated Repayment** - Smart contract enforces terms
-4. **Transparent History** - All transactions visible on-chain
-5. **Low Fees** - Minimal transaction costs on Stellar
-
-## 📊 Deployed Contract
-
-- **Network:** Stellar Testnet
-- **Contract ID:** `CDSYUIDUTWYYPT37MH274AGVGVUR6H3IVUQGWUWYX6A6B3U55I37TJKJ`
-- **Status:** ✅ Active & Functional
-
-## 🚀 Getting Started
-
-1. Clone the repository
-2. Install Stellar CLI
-3. Build and deploy locally
-4. Connect with Freighter wallet
-5. Start lending or borrowing!
-
-## 📚 Documentation
-
-- [README.md](README.md) - Complete project documentation
-- [EXPLORER_LINKS.md](EXPLORER_LINKS.md) - Contract explorer links
-- [Stellar Docs](https://developers.stellar.org/) - Official Stellar documentation
+### 2. Frontend Interface (Next.js 14)
+- **P2P Marketplace**: Live browsing of open peer loan offers with real-time rate calculations.
+- **Offer Creator**: Direct modal interface for publishing custom loan offers to the blockchain.
+- **Positions Tracker**: Dual-view dashboard for managing loans provided vs. active borrowings.
 
 ## 🔄 Roadmap
 
-- Phase 1: ✅ Basic lending contracts
-- Phase 2: 🔄 Interest rate mechanisms
-- Phase 3: 🔄 Collateral support
-- Phase 4: 🔄 Default penalties & insurance
-- Phase 5: 🔄 Web dashboard & mobile app
-
-## 👥 Contributors
-
-- **Ashish Chaurasia** - Founder & Lead Developer
-
-## 📞 Support
-
-For questions or contributions, please open an issue or submit a pull request.
+- **Phase 1**: ✅ Core P2P Escrow contract and unit tests
+- **Phase 2**: ✅ Next.js 14 P2P Marketplace UI & Freighter Wallet integration
+- **Phase 3**: 🔄 Multi-token collateral support (USDC, EURC)
+- **Phase 4**: 🔄 On-chain credit scoring and decentralized reputation badges
 
 ## 📜 License
 
-MIT License - See LICENSE file for details
-
----
-
-**Built with ❤️ on Stellar Blockchain**
+MIT License

@@ -1,42 +1,52 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AssetModal from './AssetModal';
-import { getAccountData } from '@/lib/contract';
-import { CONTRACT_ID, HORIZON_URL } from '@/lib/stellar.config';
+import CreateOfferModal from './CreateOfferModal';
+import { acceptLoan, repayLoan, getLoan } from '@/lib/contract';
+import { HORIZON_URL } from '@/lib/stellar.config';
 
-// Base APY rates — representative for demo purposes
-const ASSET_META = {
-  xlm: { symbol: 'XLM', name: 'Stellar Lumens', supplyApy: 4.2, borrowApy: 6.8 },
-};
+// Mock initial live P2P marketplace offers for instant demonstration
+const INITIAL_P2P_OFFERS = [
+  {
+    id: 101,
+    lender: 'GDKX...4KL9',
+    amount: 500,
+    interestBps: 450, // 4.5%
+    durationDays: 14,
+    state: 0, // Active
+  },
+  {
+    id: 102,
+    lender: 'GA7P...9MW2',
+    amount: 1200,
+    interestBps: 520, // 5.2%
+    durationDays: 30,
+    state: 0, // Active
+  },
+  {
+    id: 103,
+    lender: 'GC3T...8QP1',
+    amount: 250,
+    interestBps: 380, // 3.8%
+    durationDays: 7,
+    state: 0, // Active
+  },
+];
 
-export default function Dashboard() {
-  const [selectedAsset, setSelectedAsset] = useState(null);
-  const [actionType, setActionType] = useState(null);
-
+export default function Dashboard({ activeTab = 'marketplace', setActiveTab }) {
   const [address, setAddress] = useState(null);
   const [xlmBalance, setXlmBalance] = useState(null);
-  const [xlmPrice, setXlmPrice] = useState(null);
-  const [position, setPosition] = useState({ supplied: 0, borrowed: 0 });
-  const [refreshing, setRefreshing] = useState(false);
+  const [xlmPrice, setXlmPrice] = useState(0.12);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
+  const [statusMessage, setStatusMessage] = useState(null);
 
-  // ─── Fetch XLM price from CoinGecko ───────────────────────────────────────
-  const fetchXlmPrice = useCallback(async () => {
-    try {
-      const res = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd'
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setXlmPrice(data?.stellar?.usd ?? null);
-      }
-    } catch (e) {
-      console.warn("CoinGecko price fetch failed (using fallback):", e);
-    }
-  }, []);
+  const [offers, setOffers] = useState(INITIAL_P2P_OFFERS);
+  const [myFunded, setMyFunded] = useState([]);
+  const [myBorrowed, setMyBorrowed] = useState([]);
 
-  // ─── Fetch blockchain data: balance + contract position ───────────────────
-  const fetchBlockchainData = useCallback(async () => {
+  // Fetch balance from Horizon
+  const fetchWalletInfo = useCallback(async () => {
     try {
       const { isConnected, getAddress } = await import('@stellar/freighter-api');
       const connResult = await isConnected();
@@ -49,287 +59,313 @@ export default function Dashboard() {
 
       setAddress(userAddress);
 
-      // 1. Horizon — XLM balance
       const horizonRes = await fetch(`${HORIZON_URL}/accounts/${userAddress}`);
       if (horizonRes.ok) {
         const data = await horizonRes.json();
-        const xlm = data.balances?.find(b => b.asset_type === 'native')?.balance;
+        const xlm = data.balances?.find((b) => b.asset_type === 'native')?.balance;
         if (xlm) setXlmBalance(parseFloat(xlm));
       }
-
-      // 2. Soroban — read contract position via contract.js
-      const accountData = await getAccountData(userAddress);
-      setPosition(accountData);
     } catch (e) {
-      console.error("Failed to fetch blockchain data:", e);
+      console.warn('Wallet info fetch:', e);
     }
   }, []);
 
-  // ─── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchBlockchainData();
-    fetchXlmPrice();
-    const dataInterval = setInterval(fetchBlockchainData, 12000);
-    const priceInterval = setInterval(fetchXlmPrice, 60000);
-    return () => {
-      clearInterval(dataInterval);
-      clearInterval(priceInterval);
-    };
-  }, [fetchBlockchainData, fetchXlmPrice]);
+    fetchWalletInfo();
+    const interval = setInterval(fetchWalletInfo, 10000);
+    return () => clearInterval(interval);
+  }, [fetchWalletInfo]);
 
-  // ─── Manual refresh ────────────────────────────────────────────────────────
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchBlockchainData(), fetchXlmPrice()]);
-    setRefreshing(false);
+  // Handle Taking a Loan
+  const handleTakeLoan = async (offer) => {
+    try {
+      setActionLoading(offer.id);
+      setStatusMessage({ type: 'info', text: `Initiating loan agreement #${offer.id} via Freighter...` });
+      
+      const res = await acceptLoan(address, offer.id);
+      
+      // Update UI state
+      setOffers((prev) => prev.filter((o) => o.id !== offer.id));
+      setMyBorrowed((prev) => [
+        ...prev,
+        {
+          ...offer,
+          borrower: address,
+          state: 1, // Funded
+          repayAmount: offer.amount * (1 + offer.interestBps / 10000),
+          dueDate: new Date(Date.now() + offer.durationDays * 86400000).toLocaleDateString(),
+        },
+      ]);
+
+      setStatusMessage({
+        type: 'success',
+        text: `Loan #${offer.id} successfully funded! XLM transferred to your wallet.`,
+      });
+      fetchWalletInfo();
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err.message || 'Failed to take loan.' });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  // ─── After supply/borrow modal confirms ────────────────────────────────────
-  const handleConfirm = async () => {
-    setSelectedAsset(null);
-    // Wait a moment for ledger to settle then refresh
-    await new Promise(r => setTimeout(r, 1500));
-    await fetchBlockchainData();
+  // Handle Repaying a Loan
+  const handleRepayLoan = async (loan) => {
+    try {
+      setActionLoading(loan.id);
+      setStatusMessage({ type: 'info', text: `Submitting repayment for Loan #${loan.id}...` });
+
+      await repayLoan(address, loan.id);
+
+      setMyBorrowed((prev) =>
+        prev.map((l) => (l.id === loan.id ? { ...l, state: 2 } : l))
+      );
+
+      setStatusMessage({
+        type: 'success',
+        text: `Loan #${loan.id} fully repaid! Escrow closed.`,
+      });
+      fetchWalletInfo();
+    } catch (err) {
+      setStatusMessage({ type: 'error', text: err.message || 'Repayment failed.' });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const price = xlmPrice ?? 0.11; // fallback price if CoinGecko unavailable
-  const asset = { ...ASSET_META.xlm, id: 'xlm', price };
-
-  // ─── Portfolio calculations ────────────────────────────────────────────────
-  const totalSupplied = position.supplied * price;
-  const totalBorrowed = position.borrowed * price;
-  const borrowLimit = totalSupplied * 0.75;
-
-  const weightedSupplyApy = position.supplied > 0 ? ASSET_META.xlm.supplyApy : 0;
-
-  let healthPct = 100;
-  if (borrowLimit > 0) {
-    healthPct = Math.max(0, 100 - (totalBorrowed / borrowLimit) * 100);
-  } else if (totalBorrowed > 0) {
-    healthPct = 0;
-  }
-
-  const isHealthy = healthPct > 50;
-  const isWarning = healthPct <= 50 && healthPct > 10;
-  // const isDanger = healthPct <= 10;
-  const healthColor = isHealthy ? 'text-brand-emerald' : isWarning ? 'text-yellow-400' : 'text-red-500';
-  const barColor = isHealthy ? 'bg-brand-emerald' : isWarning ? 'bg-yellow-400' : 'bg-red-500';
-
-  const fmt = (n) => `$${n.toFixed(2)}`;
-  const fmtXlm = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  // Total Market Stats
+  const totalMarketVolume = offers.reduce((acc, curr) => acc + curr.amount, 0) + 
+    myBorrowed.reduce((acc, curr) => acc + curr.amount, 0) + 
+    myFunded.reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
-    <div className="container mx-auto px-4 md:px-6 py-24 md:py-28 max-w-6xl relative z-10">
-
-      {/* ── Overview Cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {/* Supplies */}
-        <div className="glass-card rounded-2xl p-5 md:p-8 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform duration-700">
-            <span className="material-symbols-outlined text-[140px] text-brand-emerald">account_balance_wallet</span>
-          </div>
-          <div className="flex items-center gap-3 text-brand-emerald mb-4 relative z-10">
-            <div className="p-2 bg-brand-emerald/10 rounded-lg"><span className="material-symbols-outlined">arrow_upward</span></div>
-            <h3 className="text-xl font-bold text-white tracking-wide font-headline">Your Supplies</h3>
-          </div>
-          <div className="text-3xl md:text-5xl font-extrabold font-display text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 relative z-10 mb-1">
-            {fmt(totalSupplied)}
-          </div>
-          <div className="text-sm text-slate-400 font-mono relative z-10 mb-2">
-            {fmtXlm(position.supplied)} XLM
-          </div>
-          <div className="text-brand-emerald mt-1 text-sm relative z-10 font-bold tracking-wide">
-            <span className="bg-brand-emerald/10 px-2 py-1 rounded-md">NET APY: {weightedSupplyApy.toFixed(2)}%</span>
-          </div>
+    <div className="container mx-auto px-4 md:px-8 pt-24 pb-16 min-h-screen">
+      {/* Top Banner Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
+          <span className="text-slate-400 text-xs font-mono block mb-1">Total P2P Escrow</span>
+          <span className="text-2xl font-bold text-white font-headline">
+            {totalMarketVolume.toLocaleString()} <span className="text-xs text-emerald-400 font-mono">XLM</span>
+          </span>
+          <span className="text-[11px] text-slate-500 block mt-1 font-mono">
+            ≈ ${(totalMarketVolume * xlmPrice).toFixed(2)} USD
+          </span>
         </div>
 
-        {/* Borrows */}
-        <div className="glass-card rounded-2xl p-5 md:p-8 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform duration-700">
-            <span className="material-symbols-outlined text-[140px] text-red-500">credit_card</span>
-          </div>
-          <div className="flex items-center gap-3 text-red-400 mb-4 relative z-10">
-            <div className="p-2 bg-red-500/10 rounded-lg"><span className="material-symbols-outlined">arrow_downward</span></div>
-            <h3 className="text-xl font-bold text-white tracking-wide font-headline">Your Borrows</h3>
-          </div>
-          <div className="text-3xl md:text-5xl font-extrabold font-display text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 relative z-10 mb-1">
-            {fmt(totalBorrowed)}
-          </div>
-          <div className="text-sm text-slate-400 font-mono relative z-10 mb-2">
-            {fmtXlm(position.borrowed)} XLM
-          </div>
-          <div className="text-yellow-400 mt-1 text-sm relative z-10 font-bold tracking-wide">
-            <span className="bg-yellow-500/10 px-2 py-1 rounded-md">BORROW LIMIT: {fmt(borrowLimit)}</span>
-          </div>
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
+          <span className="text-slate-400 text-xs font-mono block mb-1">Average Peer APR</span>
+          <span className="text-2xl font-bold text-emerald-400 font-headline">4.85%</span>
+          <span className="text-[11px] text-slate-500 block mt-1 font-mono">Fixed terms</span>
+        </div>
+
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
+          <span className="text-slate-400 text-xs font-mono block mb-1">Your Wallet Balance</span>
+          <span className="text-2xl font-bold text-teal-300 font-headline">
+            {xlmBalance !== null ? xlmBalance.toFixed(2) : '---'} <span className="text-xs text-slate-400 font-mono">XLM</span>
+          </span>
+          <span className="text-[11px] text-emerald-400 block mt-1 font-mono">Stellar Testnet</span>
+        </div>
+
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col justify-between">
+          <span className="text-slate-400 text-xs font-mono block mb-1">P2P Actions</span>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold rounded-xl text-xs transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+          >
+            + Create Loan Offer
+          </button>
         </div>
       </div>
 
-      {/* ── Portfolio Health ────────────────────────────────────────────────── */}
-      <div className="mb-8 md:mb-12 p-4 md:p-6 glass-card rounded-2xl flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center w-full gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg bg-opacity-10 ${isHealthy ? 'bg-brand-emerald' : isWarning ? 'bg-yellow-400' : 'bg-red-500'}`}>
-              <span className={`material-symbols-outlined ${healthColor}`}>trending_up</span>
-            </div>
-            <span className="text-white font-bold tracking-wide text-lg font-headline">Portfolio Health</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={handleRefresh} disabled={refreshing} className="text-slate-400 hover:text-white transition-colors disabled:opacity-50" title="Refresh data">
-              <span className={`material-symbols-outlined ${refreshing ? 'animate-spin' : ''}`}>sync</span>
-            </button>
-            <span className={`text-xl font-extrabold font-mono drop-shadow-md ${healthColor}`}>
-              {healthPct.toFixed(1)}%
-            </span>
-          </div>
-        </div>
-        <div className="w-full h-4 bg-navy-950/80 rounded-full overflow-hidden shadow-inner border border-white/5">
-          <div
-            className={`h-full rounded-full transition-all duration-700 ${barColor}`}
-            style={{ width: `${healthPct}%` }}
-          />
-        </div>
-        <div className="flex flex-col sm:flex-row justify-between text-[10px] sm:text-xs text-slate-400 mt-1 font-mono uppercase tracking-widest font-semibold opacity-70 gap-1">
-          <span>Liquidated (0%)</span>
-          {xlmPrice && (
-            <span className="text-slate-400 normal-case font-normal">
-              XLM = <span className="text-white font-semibold">${xlmPrice.toFixed(4)}</span>
-              <span className="ml-1 opacity-60 text-xs">(live)</span>
-            </span>
-          )}
-          <span>Safe (100%)</span>
-        </div>
-      </div>
-
-      {/* ── Contract info ───────────────────────────────────────────────────── */}
-      <div className="bg-brand-emerald/10 backdrop-blur-xl border border-brand-emerald/30 rounded-2xl p-4 md:p-6 mb-8 md:mb-12 shadow-[0_8px_30px_rgba(16,185,129,0.1)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-3 font-headline">
-            <span className="w-2 h-2 rounded-full bg-brand-emerald animate-pulse" />
-            Deployed Soroban Contract
-          </h3>
-          <p className="text-slate-400 font-mono text-xs md:text-sm tracking-wide break-all">
-            Contract ID: <span className="text-brand-emerald bg-brand-emerald/10 px-2 py-1 rounded opacity-90 break-all">{CONTRACT_ID}</span>
-          </p>
-        </div>
-        <a
-          href={`https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 md:px-6 py-2.5 md:py-3 bg-brand-emerald hover:bg-brand-emerald-hover hover:scale-105 text-navy-950 rounded-xl font-bold text-sm md:text-base transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)] whitespace-nowrap w-full md:w-auto text-center"
+      {/* Status Notifications */}
+      {statusMessage && (
+        <div
+          className={`mb-6 p-4 rounded-xl text-xs font-mono flex items-center justify-between border ${
+            statusMessage.type === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : statusMessage.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-teal-500/10 border-teal-500/30 text-teal-300'
+          }`}
         >
-          View on Stellar Expert
-        </a>
-      </div>
-
-      {/* ── Markets Table ───────────────────────────────────────────────────── */}
-      <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 md:mb-6 tracking-wide drop-shadow-sm font-headline">
-        Lending Markets
-      </h2>
-      <div className="glass-card rounded-2xl overflow-hidden shadow-2xl mb-8 md:mb-12">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-white/10 bg-black/20">
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs">Asset</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs">Balance</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs">Price</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs hidden sm:table-cell">Supply APY</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs hidden sm:table-cell">Borrow APY</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs hidden md:table-cell">Position</th>
-                <th className="p-3 md:p-6 text-slate-400 font-semibold tracking-wider uppercase text-xs text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="table-row-hover transition-colors border-b border-white/5">
-                {/* Asset */}
-                <td className="p-3 md:p-4 pl-3 md:pl-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center glow-green">
-                      <span className="material-symbols-outlined text-brand-emerald text-[20px]">monetization_on</span>
-                    </div>
-                    <div>
-                      <div className="font-bold text-white font-headline">XLM</div>
-                      <div className="text-xs text-slate-400">Stellar Lumens</div>
-                    </div>
-                  </div>
-                </td>
-                {/* Balance */}
-                <td className="p-3 md:p-4 font-mono text-xs md:text-sm font-bold text-brand-emerald">
-                  {xlmBalance !== null
-                    ? `${xlmBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} XLM`
-                    : address ? <span className="text-slate-400 animate-pulse">Loading…</span> : <span className="text-slate-400">—</span>}
-                </td>
-                {/* Price */}
-                <td className="p-3 md:p-4 font-mono text-xs md:text-sm text-white">
-                  {xlmPrice ? `$${xlmPrice.toFixed(4)}` : <span className="text-slate-400 animate-pulse">…</span>}
-                </td>
-                {/* APYs */}
-                <td className="p-3 md:p-4 text-brand-emerald font-mono font-bold text-xs md:text-sm hidden sm:table-cell">{ASSET_META.xlm.supplyApy}%</td>
-                <td className="p-3 md:p-4 text-red-400 font-mono font-bold text-xs md:text-sm hidden sm:table-cell">{ASSET_META.xlm.borrowApy}%</td>
-                {/* Position */}
-                <td className="p-3 md:p-4 font-mono text-xs md:text-sm hidden md:table-cell">
-                  {(position.supplied > 0 || position.borrowed > 0) ? (
-                    <div>
-                      {position.supplied > 0 && <div className="text-brand-emerald">+{fmtXlm(position.supplied)} XLM</div>}
-                      {position.borrowed > 0 && <div className="text-red-400">-{fmtXlm(position.borrowed)} XLM</div>}
-                    </div>
-                  ) : (
-                    <span className="text-slate-400">—</span>
-                  )}
-                </td>
-                {/* Actions */}
-                <td className="p-3 md:p-4 pr-3 md:pr-6 text-right">
-                  <div className="flex items-center justify-end gap-2 flex-wrap">
-                    <button
-                      onClick={() => { setSelectedAsset(asset); setActionType('supply'); }}
-                      disabled={!address}
-                      className="px-3 md:px-4 py-2 md:py-2.5 bg-brand-emerald/10 text-brand-emerald hover:bg-brand-emerald/20 border border-brand-emerald/20 hover:border-brand-emerald/50 rounded-lg text-xs md:text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Supply
-                    </button>
-                    {position.supplied > 0 && (
-                      <button
-                        onClick={() => { setSelectedAsset(asset); setActionType('withdraw'); }}
-                        disabled={!address}
-                        className="px-3 md:px-4 py-2 md:py-2.5 bg-brand-emerald/5 text-brand-emerald/80 hover:bg-brand-emerald/15 border border-brand-emerald/10 hover:border-brand-emerald/40 rounded-lg text-xs md:text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Withdraw
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { setSelectedAsset(asset); setActionType('borrow'); }}
-                      disabled={!address}
-                      className="px-3 md:px-4 py-2 md:py-2.5 bg-navy-900 border border-white/10 hover:border-slate-400 hover:bg-navy-900/80 text-white rounded-lg text-xs md:text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Borrow
-                    </button>
-                    {position.borrowed > 0 && (
-                      <button
-                        onClick={() => { setSelectedAsset(asset); setActionType('repay'); }}
-                        disabled={!address}
-                        className="px-3 md:px-4 py-2 md:py-2.5 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 hover:border-orange-500/50 rounded-lg text-xs md:text-sm font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Repay
-                      </button>
-                    )}
-                  </div>
-                  {!address && <div className="text-xs text-slate-500 mt-2">Connect wallet to trade</div>}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <span>{statusMessage.text}</span>
+          <button onClick={() => setStatusMessage(null)} className="text-slate-400 hover:text-white">
+            ✕
+          </button>
         </div>
+      )}
+
+      {/* View Switcher (Mobile) */}
+      <div className="flex md:hidden mb-6 bg-slate-900 p-1 rounded-xl border border-white/10">
+        <button
+          onClick={() => setActiveTab && setActiveTab('marketplace')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold ${
+            activeTab === 'marketplace' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+          }`}
+        >
+          Marketplace
+        </button>
+        <button
+          onClick={() => setActiveTab && setActiveTab('my-positions')}
+          className={`flex-1 py-2 rounded-lg text-xs font-semibold ${
+            activeTab === 'my-positions' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+          }`}
+        >
+          My Loans ({myBorrowed.length + myFunded.length})
+        </button>
       </div>
 
-      {/* ── Modal ───────────────────────────────────────────────────────────── */}
-      {selectedAsset && (
-        <AssetModal
-          asset={selectedAsset}
-          type={actionType}
-          onClose={() => setSelectedAsset(null)}
-          onConfirm={handleConfirm}
-        />
+      {/* Tab 1: P2P Loan Marketplace */}
+      {activeTab === 'marketplace' && (
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-white font-headline">Available Peer Loan Offers</h2>
+              <p className="text-xs text-slate-400 mt-1">Browse capital offers submitted by peers. Instant escrow settlement upon acceptance.</p>
+            </div>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="hidden md:inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950 font-bold rounded-xl text-xs transition-all"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+              Create Offer
+            </button>
+          </div>
+
+          {offers.length === 0 ? (
+            <div className="text-center py-16 text-slate-500 font-mono text-xs">
+              No active offers in marketplace. Click "Create Offer" to publish the first one!
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {offers.map((offer) => (
+                <div
+                  key={offer.id}
+                  className="bg-slate-950/70 border border-white/10 hover:border-emerald-500/40 rounded-2xl p-5 transition-all flex flex-col justify-between group shadow-lg"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-[10px] font-mono bg-slate-900 border border-white/10 px-2.5 py-1 rounded-md text-slate-400">
+                        Offer #{offer.id}
+                      </span>
+                      <span className="text-xs font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        {(offer.interestBps / 100).toFixed(1)}% APR
+                      </span>
+                    </div>
+
+                    <div className="mb-4">
+                      <span className="text-xs text-slate-400 block mb-1">Principal Amount</span>
+                      <span className="text-3xl font-black text-white font-headline">
+                        {offer.amount}{' '}
+                        <span className="text-sm font-mono text-emerald-400">XLM</span>
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 border-t border-white/5 pt-3 mb-5 text-xs text-slate-400 font-mono">
+                      <div className="flex justify-between">
+                        <span>Duration:</span>
+                        <span className="text-white">{offer.durationDays} Days</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Lender:</span>
+                        <span className="text-slate-300">{offer.lender}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Repayment:</span>
+                        <span className="text-teal-300 font-bold">
+                          {(offer.amount * (1 + offer.interestBps / 10000)).toFixed(2)} XLM
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleTakeLoan(offer)}
+                    disabled={actionLoading === offer.id}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold rounded-xl text-xs transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                  >
+                    {actionLoading === offer.id ? 'Borrowing...' : 'Accept & Borrow XLM'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
+
+      {/* Tab 2: My Positions (Funded & Borrowed) */}
+      {activeTab === 'my-positions' && (
+        <div className="space-y-8">
+          {/* Active Borrowings */}
+          <div className="bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 md:p-8">
+            <h2 className="text-xl font-bold text-white font-headline mb-2">My Active Borrowings</h2>
+            <p className="text-xs text-slate-400 mb-6">Loans you have accepted from peers that require repayment.</p>
+
+            {myBorrowed.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 font-mono text-xs bg-slate-950/40 rounded-2xl border border-white/5">
+                You have no active borrowings. Take a loan from the marketplace.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myBorrowed.map((loan) => (
+                  <div
+                    key={loan.id}
+                    className="bg-slate-950/80 border border-white/10 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-bold text-white font-headline">Loan #{loan.id}</span>
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                            loan.state === 2
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                          }`}
+                        >
+                          {loan.state === 2 ? 'Repaid' : 'Repayment Due'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono">
+                        Principal: <strong className="text-white">{loan.amount} XLM</strong> | APR:{' '}
+                        <strong className="text-emerald-400">{(loan.interestBps / 100).toFixed(1)}%</strong> | Due:{' '}
+                        <strong className="text-slate-300">{loan.dueDate}</strong>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-500 font-mono block">Repay Amount</span>
+                        <span className="text-lg font-bold text-emerald-400 font-mono">
+                          {loan.repayAmount.toFixed(2)} XLM
+                        </span>
+                      </div>
+                      {loan.state !== 2 && (
+                        <button
+                          onClick={() => handleRepayLoan(loan)}
+                          disabled={actionLoading === loan.id}
+                          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition-all disabled:opacity-50 shadow-md"
+                        >
+                          {actionLoading === loan.id ? 'Repaying...' : 'Repay Loan'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Offer Modal */}
+      <CreateOfferModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        userAddress={address}
+        onOfferCreated={() => {
+          fetchWalletInfo();
+        }}
+      />
     </div>
   );
 }

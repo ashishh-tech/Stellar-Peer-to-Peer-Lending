@@ -1,14 +1,8 @@
 /**
- * StellarLend — Soroban Contract Integration
+ * Stellar P2P Lending Protocol — Soroban Contract Integration
  *
- * This module is the single integration point between the Next.js frontend and
- * the deployed StellarLend Soroban smart contract. Every contract function
- * exposed in contracts/stellarlend/src/lib.rs has a matching JavaScript wrapper
- * here that builds, simulates, signs (via Freighter), submits, and polls the
- * transaction.
- *
- * Runtime values come from environment variables (see .env.example).
- * The hardcoded CONTRACT_ID below is only used as a fallback.
+ * Direct integration layer between the Next.js frontend and the
+ * Stellar P2P Lending Soroban smart contract.
  */
 
 import * as StellarSdk from "stellar-sdk";
@@ -24,12 +18,8 @@ import {
   NETWORK_PASSPHRASE as ENV_NETWORK_PASSPHRASE,
 } from "./stellar.config";
 
-// ── Configuration Fallbacks ──────────────────────────────────────────────────
-// If environment variables are missing (e.g. not set in Netlify dashboard),
-// we fall back to the default Testnet configuration to prevent crashes.
-
 const CONTRACT_ID =
-  ENV_CONTRACT_ID || "CAEHJM2NVDC7IPHICCPAVSNFF3MN4SK4F5K5O6V5T3MSDQBULBLNLUCB";
+  ENV_CONTRACT_ID || "CDSYUIDUTWYYPT37MH274AGVGVUR6H3IVUQGWUWYX6A6B3U55I37TJKJ";
 
 const SERVER_URL =
   ENV_SERVER_URL || "https://soroban-testnet.stellar.org";
@@ -40,22 +30,14 @@ const HORIZON_URL =
 const NETWORK_PASSPHRASE =
   ENV_NETWORK_PASSPHRASE || "Test SDF Network ; September 2015";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Return a connected SorobanRpc.Server instance. */
 function getServer() {
   return new StellarSdk.SorobanRpc.Server(SERVER_URL);
 }
 
-/** Return a Contract handle bound to our deployed contract. */
 function getContract() {
   return new StellarSdk.Contract(CONTRACT_ID);
 }
 
-/**
- * Convert an XLM-denominated amount (e.g. 1.5) to the i128 stroops ScVal
- * expected by the contract (1 XLM = 10_000_000 stroops).
- */
 function amountToScVal(xlmAmount) {
   return StellarSdk.nativeToScVal(
     BigInt(Math.round(parseFloat(xlmAmount) * 1e7)),
@@ -63,10 +45,6 @@ function amountToScVal(xlmAmount) {
   );
 }
 
-/**
- * Ensure Freighter is connected and return the user's public key.
- * Throws if the wallet is unavailable or access was denied.
- */
 async function requireWallet() {
   const connResult = await isConnected();
   if (!(connResult?.isConnected ?? connResult)) {
@@ -80,245 +58,166 @@ async function requireWallet() {
   return address;
 }
 
-/**
- * Fetch the current sequence number for an account from Horizon.
- */
 async function fetchAccount(address) {
   const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
   if (!res.ok) {
-    throw new Error("Failed to fetch account from Horizon. Is your testnet account funded?");
+    throw new Error("Failed to fetch account from Horizon. Ensure your testnet account is funded.");
   }
   const data = await res.json();
   return new StellarSdk.Account(address, data.sequence);
 }
 
-/**
- * Full lifecycle for a mutating contract call:
- *   build tx → simulate → assemble → sign (Freighter) → send → poll
- *
- * @param {string}   userAddress  Stellar public key
- * @param {string}   fnName       Contract function name
- * @param {ScVal[]}  args         Soroban ScVal arguments
- * @param {function} [onStatus]   Optional (status: string) => void callback
- * @returns {object} The successful getTransaction RPC result
- */
-async function submitContractTx(userAddress, fnName, args, onStatus) {
+async function callMutatingFunction(userAddress, fnName, args) {
   const server = getServer();
   const contract = getContract();
+  const sourceAccount = await fetchAccount(userAddress);
 
-  onStatus?.("signing");
-
-  // 1. Build the transaction
-  const account = await fetchAccount(userAddress);
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: "1000",
+  const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+    fee: "100000",
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call(fnName, ...args))
-    .setTimeout(60)
-    .build();
-
-  // 2. Simulate
-  const simResponse = await server.simulateTransaction(tx);
-  if (!StellarSdk.SorobanRpc.Api.isSimulationSuccess(simResponse)) {
-    const detail = JSON.stringify(simResponse?.events ?? simResponse, null, 2);
-    throw new Error(`Simulation failed for "${fnName}".\n\nDetails: ${detail}`);
-  }
-
-  // 3. Assemble with resource estimates from simulation
-  const assembled = StellarSdk.SorobanRpc.assembleTransaction(tx, simResponse).build();
-
-  // 4. Sign via Freighter (with timeout guard)
-  // Freighter's popup can crash on complex Soroban transactions, causing the
-  // promise to never resolve. We race against a 45-second timeout.
-  const xdrToSign = assembled.toXDR();
-  console.log("[StellarLend] Sending XDR to Freighter for signing...");
-  console.log("[StellarLend] XDR length:", xdrToSign.length);
-
-  let signResult;
-  try {
-    signResult = await Promise.race([
-      signTransaction(xdrToSign, {
-        networkPassphrase: NETWORK_PASSPHRASE,
-        address: userAddress,
-      }),
-      new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                "Freighter signing timed out (45s). This usually means the Freighter popup crashed.\n\n" +
-                "How to fix:\n" +
-                "1. Update your Freighter extension to the latest version\n" +
-                "2. Make sure Freighter is set to 'Test Network'\n" +
-                "3. Try closing and re-opening the Freighter extension\n" +
-                "4. Refresh this page and try again"
-              )
-            ),
-          45000
-        )
-      ),
-    ]);
-  } catch (freighterErr) {
-    throw new Error(
-      freighterErr.message ||
-        "Freighter signing failed. Please update your Freighter wallet extension."
-    );
-  }
-
-  if (signResult?.error) {
-    throw new Error("Signing rejected: " + signResult.error);
-  }
-  const signedXdr = signResult?.signedTxXdr ?? signResult;
-  if (!signedXdr || typeof signedXdr !== "string") {
-    throw new Error("Unexpected Freighter response: " + JSON.stringify(signResult));
-  }
-
-  // 5. Submit
-  onStatus?.("sending");
-  const signedTx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
-  const sendResponse = await server.sendTransaction(signedTx);
-  if (sendResponse.status === "ERROR") {
-    throw new Error(
-      "Network rejected transaction: " +
-        JSON.stringify(sendResponse.errorResult ?? sendResponse)
-    );
-  }
-
-  // 6. Poll for confirmation
-  onStatus?.("polling");
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    try {
-      const rpcRes = await fetch(SERVER_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getTransaction",
-          params: { hash: sendResponse.hash },
-        }),
-      });
-      const rpcData = await rpcRes.json();
-      const status = rpcData?.result?.status;
-      if (status === "SUCCESS") return rpcData.result;
-      if (status === "FAILED") {
-        throw new Error("Transaction was included but FAILED on-chain.");
-      }
-    } catch (pollErr) {
-      if (pollErr.message?.includes("FAILED")) throw pollErr;
-    }
-  }
-
-  throw new Error(
-    "Transaction timed out. Check Stellar Expert for tx: " + sendResponse.hash
-  );
-}
-
-// ── Public Contract Functions ────────────────────────────────────────────────
-// Each function below maps 1-to-1 with the Rust contract in
-// contracts/stellarlend/src/lib.rs
-
-/**
- * Initialize the contract with an admin address.
- * Calls: `initialize(admin: Address)`
- *
- * @param {string}   adminAddress  Stellar public key of the admin
- * @param {function} [onStatus]    Optional status callback
- */
-export async function initialize(adminAddress, onStatus) {
-  const userAddress = await requireWallet();
-  const adminScv = new StellarSdk.Address(adminAddress).toScVal();
-  return submitContractTx(userAddress, "initialize", [adminScv], onStatus);
-}
-
-/**
- * Deposit (supply) XLM into the lending pool.
- * Calls: `deposit(user: Address, amount: i128)`
- *
- * @param {string}   userAddress  Stellar public key
- * @param {number}   amount       Amount in XLM (e.g. 10.5)
- * @param {function} [onStatus]   Optional status callback
- */
-export async function deposit(userAddress, amount, onStatus) {
-  const userScv = new StellarSdk.Address(userAddress).toScVal();
-  const amountScv = amountToScVal(amount);
-  return submitContractTx(userAddress, "deposit", [userScv, amountScv], onStatus);
-}
-
-/**
- * Withdraw XLM from the lending pool.
- * Calls: `withdraw(user: Address, amount: i128)`
- *
- * @param {string}   userAddress  Stellar public key
- * @param {number}   amount       Amount in XLM
- * @param {function} [onStatus]   Optional status callback
- */
-export async function withdraw(userAddress, amount, onStatus) {
-  const userScv = new StellarSdk.Address(userAddress).toScVal();
-  const amountScv = amountToScVal(amount);
-  return submitContractTx(userAddress, "withdraw", [userScv, amountScv], onStatus);
-}
-
-/**
- * Borrow XLM against supplied collateral.
- * Calls: `borrow(user: Address, amount: i128)`
- * Max borrow = 75% of supplied amount (enforced on-chain).
- *
- * @param {string}   userAddress  Stellar public key
- * @param {number}   amount       Amount in XLM
- * @param {function} [onStatus]   Optional status callback
- */
-export async function borrow(userAddress, amount, onStatus) {
-  const userScv = new StellarSdk.Address(userAddress).toScVal();
-  const amountScv = amountToScVal(amount);
-  return submitContractTx(userAddress, "borrow", [userScv, amountScv], onStatus);
-}
-
-/**
- * Repay borrowed XLM.
- * Calls: `repay(user: Address, amount: i128)`
- *
- * @param {string}   userAddress  Stellar public key
- * @param {number}   amount       Amount in XLM
- * @param {function} [onStatus]   Optional status callback
- */
-export async function repay(userAddress, amount, onStatus) {
-  const userScv = new StellarSdk.Address(userAddress).toScVal();
-  const amountScv = amountToScVal(amount);
-  return submitContractTx(userAddress, "repay", [userScv, amountScv], onStatus);
-}
-
-/**
- * Read-only: fetch a user's account data from the contract.
- * Calls: `get_account_data(user: Address)` via simulation (no signing).
- *
- * @param {string} userAddress  Stellar public key
- * @returns {{ supplied: number, borrowed: number }}  Balances in XLM
- */
-export async function getAccountData(userAddress) {
-  const server = getServer();
-  const contract = getContract();
-  const userScv = new StellarSdk.Address(userAddress).toScVal();
-
-  const readTx = new StellarSdk.TransactionBuilder(
-    new StellarSdk.Account(userAddress, "0"),
-    { fee: "100", networkPassphrase: NETWORK_PASSPHRASE }
-  )
-    .addOperation(contract.call("get_account_data", userScv))
     .setTimeout(30)
     .build();
 
-  const simRes = await server.simulateTransaction(readTx);
-  if (StellarSdk.SorobanRpc.Api.isSimulationSuccess(simRes)) {
-    const raw = StellarSdk.scValToNative(simRes.result.retval);
-    return {
-      supplied: Number(raw.supplied ?? 0) / 1e7,
-      borrowed: Number(raw.borrowed ?? 0) / 1e7,
-    };
+  const simResult = await server.simulateTransaction(tx);
+  if (StellarSdk.SorobanRpc.isSimulationError(simResult)) {
+    throw new Error(`Simulation failed: ${simResult.error}`);
   }
 
-  // If simulation fails (e.g. account never interacted), return zeroes
-  return { supplied: 0, borrowed: 0 };
+  const preparedTx = StellarSdk.SorobanRpc.assembleTransaction(tx, simResult).build();
+  const xdr = preparedTx.toXDR();
+
+  const signedXdr = await signTransaction(xdr, {
+    networkPassphrase: NETWORK_PASSPHRASE,
+    network: "TESTNET",
+  });
+
+  if (!signedXdr) {
+    throw new Error("Transaction signing was cancelled by user.");
+  }
+
+  const transaction = StellarSdk.TransactionBuilder.fromXDR(
+    signedXdr,
+    NETWORK_PASSPHRASE
+  );
+
+  let sendResult = await server.sendTransaction(transaction);
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Transaction submission error: ${JSON.stringify(sendResult.errorResult)}`);
+  }
+
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const txStatus = await server.getTransaction(sendResult.hash);
+    if (txStatus.status === "SUCCESS") {
+      return { success: true, hash: sendResult.hash };
+    } else if (txStatus.status === "FAILED") {
+      throw new Error(`Transaction execution failed on-chain.`);
+    }
+  }
+
+  return { success: true, hash: sendResult.hash, pending: true };
+}
+
+// ── Exported P2P Protocol Functions ──────────────────────────────────────────
+
+/**
+ * Lender creates a new P2P loan offer
+ * @param {string} userAddress - Lender address
+ * @param {number|string} amountXlm - Loan amount in XLM
+ * @param {number} interestBps - Interest rate in bps (500 = 5%)
+ * @param {number} durationDays - Loan duration in days
+ */
+export async function createLoanOffer(userAddress, amountXlm, interestBps, durationDays = 30) {
+  const address = userAddress || (await requireWallet());
+  const amountScVal = amountToScVal(amountXlm);
+  const interestScVal = StellarSdk.nativeToScVal(parseInt(interestBps, 10), { type: "u32" });
+  // Convert days to approx ledgers (5 seconds per ledger -> 17280 ledgers per day)
+  const durationLedgers = parseInt(durationDays, 10) * 17280;
+  const durationScVal = StellarSdk.nativeToScVal(durationLedgers, { type: "u32" });
+  const lenderScVal = new StellarSdk.Address(address).toScVal();
+
+  return callMutatingFunction(address, "create_offer", [
+    lenderScVal,
+    amountScVal,
+    interestScVal,
+    durationScVal,
+  ]);
+}
+
+/**
+ * Borrower accepts and takes a P2P loan
+ * @param {string} userAddress - Borrower address
+ * @param {number} loanId - Loan ID
+ */
+export async function acceptLoan(userAddress, loanId) {
+  const address = userAddress || (await requireWallet());
+  const borrowerScVal = new StellarSdk.Address(address).toScVal();
+  const loanIdScVal = StellarSdk.nativeToScVal(BigInt(loanId), { type: "u64" });
+
+  return callMutatingFunction(address, "accept_loan", [
+    borrowerScVal,
+    loanIdScVal,
+  ]);
+}
+
+/**
+ * Borrower repays the loan with agreed interest
+ * @param {string} userAddress - Borrower address
+ * @param {number} loanId - Loan ID
+ */
+export async function repayLoan(userAddress, loanId) {
+  const address = userAddress || (await requireWallet());
+  const borrowerScVal = new StellarSdk.Address(address).toScVal();
+  const loanIdScVal = StellarSdk.nativeToScVal(BigInt(loanId), { type: "u64" });
+
+  return callMutatingFunction(address, "repay_loan", [
+    borrowerScVal,
+    loanIdScVal,
+  ]);
+}
+
+/**
+ * Query a specific loan details (Read-only simulation)
+ */
+export async function getLoan(loanId) {
+  try {
+    const server = getServer();
+    const contract = getContract();
+    const loanIdScVal = StellarSdk.nativeToScVal(BigInt(loanId), { type: "u64" });
+
+    // Dummy account for read-only simulation
+    const dummyAccount = new StellarSdk.Account(
+      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      "0"
+    );
+
+    const tx = new StellarSdk.TransactionBuilder(dummyAccount, {
+      fee: "100",
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call("get_loan", loanIdScVal))
+      .setTimeout(30)
+      .build();
+
+    const sim = await server.simulateTransaction(tx);
+    if (!StellarSdk.SorobanRpc.isSimulationError(sim) && sim.result) {
+      const val = sim.result.retval;
+      const parsed = StellarSdk.scValToNative(val);
+      return {
+        id: Number(parsed.id),
+        lender: parsed.lender,
+        borrower: parsed.borrower || null,
+        amount: Number(parsed.amount) / 1e7,
+        interestBps: Number(parsed.interest_bps),
+        durationLedgers: Number(parsed.duration_ledgers),
+        startLedger: Number(parsed.start_ledger),
+        state: Number(parsed.state), // 0: Active, 1: Funded, 2: Repaid, 3: Defaulted
+      };
+    }
+  } catch (err) {
+    console.warn(`Could not fetch loan #${loanId}:`, err);
+  }
+  return null;
 }
